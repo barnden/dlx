@@ -9,9 +9,8 @@ The exact cover matrix is sparse, each entry (or one) in the matrix is represent
 Given an iterable container (e.g. `std::vector`) of these entries, we construct the matrix and the solver with the `DLX::Solver(size_t row, size_t col, Container&& entries)` constructor.
 - The solver instance can also be created using the `DLX::Solver::from_entries(Container&& entries)` class method which infers the `row` and `col` values from the entries.
 
-Then calling `solve()` on the solver instance will yield a `std::optional<std::set<size_t>>`.
-- Should no solution be found, it returns a `std::nullopt`.
-- Otherwise, it yields a `std::set<size_t>` of rows which satisfy the exact cover.
+Then calling `solve()` on the solver instance will yield a `std::generator<std::unordered_set<size_t>>`.
+- The generator yields unordered sets of matrix rows which satisfy the exact cover.
 
 ### Example
 ```c++
@@ -20,10 +19,8 @@ auto entries = std::vector<Entry> { /* ... */ };
 
 auto solver = DLX::Solver::from_entries(entries);
 
-if (auto solution = solver.solve()) {
+for (auto&& solution : solver.solve()) {
     std::println("{}", *solution);
-} else {
-    std::println("No solution found.");
 }
 ```
 

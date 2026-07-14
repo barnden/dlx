@@ -3,6 +3,7 @@ Example (3) in Dancing Links [Knuth00].
 */
 
 #include "../dlx.h"
+#include <print>
 
 auto main() -> int
 {
@@ -21,9 +22,7 @@ auto main() -> int
 
     std::println("{}", solver.matrix());
 
-    if (auto result = solver.solve()) {
-        std::println("Solution: {}", *result);
-    } else {
-        std::println("No solution.");
+    for (auto&& result : solver.solve()) {
+        std::println("Solution: {}", result);
     }
 }

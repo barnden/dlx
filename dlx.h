@@ -1,22 +1,29 @@
 #include <cassert>
+#include <chrono>
 #include <cstddef>
-#include <deque>
 #include <format>
+#include <functional>
 #include <initializer_list>
 #include <optional>
-#include <print>
 #include <ranges>
-#include <set>
-#include <stdexcept>
+#include <stack>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <generator>
+static_assert(__cpp_lib_generator >= 202207L,
+              "missing std::generator from <generator>");
+
 namespace DLX {
+
+template <typename T> using limits = std::numeric_limits<T>;
+
 class Matrix;
 }
 namespace std {
-template <>
-struct formatter<DLX::Matrix> : formatter<string> {
+template <> struct formatter<DLX::Matrix> : formatter<string> {
     auto format(auto const& instance, auto& context) const
     {
         return formatter<string>::format(instance.to_string(), context);
@@ -27,15 +34,12 @@ struct formatter<DLX::Matrix> : formatter<string> {
 namespace DLX {
 
 template <typename C, typename T>
-concept Container = std::ranges::input_range<C> && std::same_as<std::ranges::range_value_t<C>, T>;
+concept Container = std::ranges::input_range<C>
+                    && std::same_as<std::ranges::range_value_t<C>, T>;
 
 class Solver;
 class Matrix {
-    friend Solver;
-
-    size_t m_rows;
-    size_t m_cols;
-
+public:
     struct Node {
         /**
         - The (0, 1)-matrix A representing an exact cover problem is stored as a
@@ -82,6 +86,16 @@ class Matrix {
         std::optional<size_t> size = std::nullopt;
         std::optional<size_t> index = std::nullopt; // Not in [Knuth00]
     };
+
+private:
+    friend Solver;
+
+    template <class C>
+        requires Container<C, Node*>
+    friend auto transform_rows(C&&);
+
+    size_t m_rows;
+    size_t m_cols;
 
     std::vector<Node*> m_headers;
     std::vector<Node*> m_row_headers;
@@ -134,11 +148,12 @@ public:
     ~Matrix()
     {
         for (auto* header : m_row_headers) {
-            // Free using row-headers as covering a column does not potentially
-            // remove a node from the row, only from the column.
+            // Incorrect ordering of cover-uncover or forgetting to uncover
+            // might make some entries unreachable by using column headers only.
+            // Instead, we use the row headers to reach every matrix entry.
             if (header->right) {
                 for (auto* node = header->right; node != header;) {
-                    // Delete every row belonging to this column header
+                    // Delete every entry belonging to this row header
                     auto next = node->right;
                     delete node;
                     node = next;
@@ -286,7 +301,7 @@ public:
         for (auto i = col->down; i != col; i = i->down) {
             for (auto j = i->right; j != i; j = j->right) {
                 if (j->column == nullptr) {
-                    j->size = std::numeric_limits<size_t>::max();
+                    j->size = limits<size_t>::max();
                     continue;
                 }
 
@@ -339,8 +354,7 @@ public:
         }
 
         for (auto i = 1uz; i <= m_rows; i++) {
-            if (m_row_headers[i]->size.value_or(0)
-                == std::numeric_limits<size_t>::max()) {
+            if (m_row_headers[i]->size.value_or(0) == limits<size_t>::max()) {
                 continue;
             }
 
@@ -380,27 +394,61 @@ public:
     }
 };
 
+template <class C>
+    requires Container<C, Matrix::Node*>
+[[nodiscard]] auto transform_rows(C&& O) noexcept -> std::unordered_set<size_t>
+{
+    auto solution = std::unordered_set<size_t> { };
+
+    for (auto* node : O) {
+        if (auto index = node->index) {
+            solution.insert(*index);
+        } else {
+            std::unreachable();
+        }
+    }
+
+    return solution;
+}
+
 class Solver {
+public:
+    using Predicate = std::function<bool(std::vector<Matrix::Node*>&)>;
+
+private:
     Matrix m_matrix;
 
-    auto search(std::deque<Matrix::Node*>& O, size_t k = 0) const noexcept
-        -> bool
+    [[nodiscard]] auto get_smallest_column() const noexcept -> Matrix::Node*
     {
-        if (m_matrix.empty()) {
-            return true;
-        }
-
-        auto* root = m_matrix.root();
-
-        auto min_size = std::numeric_limits<size_t>::max();
+        auto min_size = limits<size_t>::max();
+        auto root = m_matrix.root();
         Matrix::Node* c = nullptr;
+
         for (auto col = root->right; col != root; col = col->right) {
-            if (col->size.value_or(std::numeric_limits<size_t>::max()) >= min_size)
+            auto const size = col->size.value_or(limits<size_t>::max());
+
+            if (size >= min_size) {
                 continue;
+            }
 
             min_size = *col->size;
             c = col;
         }
+
+        return c;
+    }
+
+    auto search(std::vector<Matrix::Node*>& O,
+                std::optional<Predicate> predicate
+                = std::nullopt) const noexcept
+        -> std::generator<std::optional<std::vector<Matrix::Node*>&>>
+    {
+        if (m_matrix.empty()) {
+            co_yield O;
+            co_return;
+        }
+
+        auto* c = get_smallest_column();
 
         m_matrix.cover(c);
 
@@ -414,8 +462,10 @@ class Solver {
                 m_matrix.cover(j->column);
             }
 
-            if (search(O, k + 1)) {
-                return true;
+            if (!predicate || !(*predicate)(O)) {
+                for (auto&& solution : search(O, predicate)) {
+                    co_yield solution;
+                }
             }
 
             for (auto j = r->left; j != r; j = j->left) {
@@ -429,15 +479,15 @@ class Solver {
         }
 
         m_matrix.uncover(c);
-        return false;
+
+        co_yield std::nullopt;
+        co_return;
     }
 
 public:
     template <class C>
         requires Container<C, std::pair<size_t, size_t>>
-    [[nodiscard]] static auto
-    from_entries(C&& entries) noexcept
-        -> Solver
+    [[nodiscard]] static auto from_entries(C&& entries) noexcept -> Solver
     {
         auto rows = 0uz;
         auto cols = 0uz;
@@ -447,7 +497,7 @@ public:
             cols = std::max(cols, c);
         }
 
-        return Solver(rows, cols, entries);
+        return Solver(rows, cols, std::move(entries));
     }
 
     template <class C>
@@ -460,21 +510,17 @@ public:
         }
     }
 
-    [[nodiscard]] auto solve() const noexcept -> std::optional<std::set<size_t>>
+    [[nodiscard]] auto solve(std::optional<Predicate> predicate
+                             = std::nullopt) const noexcept
+        -> std::generator<std::unordered_set<size_t>>
     {
-        auto O = std::deque<Matrix::Node*> { };
-        auto solution = std::set<size_t> { };
+        auto O = std::vector<Matrix::Node*> { };
+        for (auto solution : search(O, predicate)) {
+            if (!solution.has_value())
+                continue;
 
-        if (!search(O)) {
-            return std::nullopt;
+            co_yield DLX::transform_rows(O);
         }
-
-        for (auto* node : O) {
-            m_matrix.uncover(node->column);
-            solution.insert(node->index.value_or(0));
-        }
-
-        return solution;
     }
 
     auto matrix() const noexcept -> Matrix const& { return m_matrix; }
