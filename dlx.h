@@ -441,7 +441,7 @@ private:
     auto search(std::vector<Matrix::Node*>& O,
                 std::optional<Predicate> predicate
                 = std::nullopt) const noexcept
-        -> std::generator<std::optional<std::vector<Matrix::Node*>&>>
+        -> std::generator<std::vector<Matrix::Node*>&>
     {
         if (m_matrix.empty()) {
             co_yield O;
@@ -479,9 +479,6 @@ private:
         }
 
         m_matrix.uncover(c);
-
-        co_yield std::nullopt;
-        co_return;
     }
 
 public:
@@ -516,7 +513,7 @@ public:
     {
         auto O = std::vector<Matrix::Node*> { };
         for (auto solution : search(O, predicate)) {
-            if (!solution.has_value())
+            if (solution.empty())
                 continue;
 
             co_yield DLX::transform_rows(O);

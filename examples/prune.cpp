@@ -24,7 +24,6 @@ auto main() -> int
     };
 
     for (auto solution : solver.solve(predicate)) {
-        if (!solution.empty())
-            std::println("{}", solution);
+        std::println("{}", solution);
     }
 }
