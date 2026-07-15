@@ -63,10 +63,25 @@ protected:
         return { row, col, val };
     }
 
-    static auto constexpr cell_to_matrix_row(size_t r, size_t c,
+    static auto constexpr cell_to_matrix_row(size_t row, size_t col,
                                              int val) noexcept -> size_t
     {
-        return r * 81 + 9 * c + val;
+        return row * 81 + 9 * col + val;
+    }
+
+    static auto constexpr cell_to_matrix_columns(size_t row, size_t col,
+                                                 int val) noexcept
+        -> std::array<size_t, 4>
+    {
+        // For a (row, col, val) triplet get the satisified constraint columns
+        // clang-format off
+        return {
+            9 * row + col + 1,                                // Cell
+            9 * row + val + 81,                               // Row
+            9 * col + val + 162,                              // Column
+            9 * ((col / 3) % 3) + 27 * (row / 3) + val + 243, // Block
+        };
+        // clang-format on
     }
 
     virtual auto generate_entries() const noexcept
@@ -76,41 +91,28 @@ protected:
         auto entries = std::vector<std::pair<size_t, size_t>> { };
         auto mask = std::unordered_set<size_t> { };
 
-        for (auto r = 1; r <= 729; r++) {
-            // Each row [1-729] corresponds to a row/column/value triplet.
-            // The entries in each row corresponds to the imposed constraints.
-            auto const [row, col, val] = matrix_row_to_cell(r);
+        auto add_entry = [&](auto r, auto c, auto v) {
+            auto row = cell_to_matrix_row(r, c, v);
 
-            if (m_board[row, col] == val) {
-                mask.insert(r);
-            } else if (m_board[row, col] != 0) {
-                continue;
+            for (auto&& col : cell_to_matrix_columns(r, c, v)) {
+                entries.emplace_back(row, col);
             }
+        };
 
-            {
-                // Cell Constraints [cols 1-81]
-                entries.emplace_back(r, (r - 1) / 9 + 1);
-            }
+        // Each row corresponds to a unique (row, col, val) triplet.
+        // Each column corresponds to a uniqueness constraint, i.e.
+        // no repeats in a row, column, block, and a unique value in each cell.
+        for (auto row = 0; row < 9; row++) {
+            for (auto col = 0; col < 9; col++) {
+                if (auto val = m_board[row, col]) {
+                    mask.insert(cell_to_matrix_row(row, col, val));
+                    add_entry(row, col, val);
+                    continue;
+                }
 
-            {
-                // Row Constraints [cols 82-162]
-                auto offset = 9 * ((r - 1) / 81);
-                auto diagonal = ((r - 1) % 9) + 1;
-
-                entries.emplace_back(r, 81 + offset + diagonal);
-            }
-
-            {
-                // Column Constraints [cols 163-243]
-                entries.emplace_back(r, 162 + (r - 1) % 81 + 1);
-            }
-
-            {
-                // Block Constraints [cols 244-324]
-                auto diagonal = (r - 1) % 9 + 1;
-                auto offset = 9 * (((r - 1) / 27) % 3) + 27 * ((r - 1) / 243);
-
-                entries.emplace_back(r, 243 + offset + diagonal);
+                for (auto val = 1; val <= 9; val++) {
+                    add_entry(row, col, val);
+                }
             }
         }
 
