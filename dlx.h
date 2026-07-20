@@ -1,5 +1,4 @@
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <format>
 #include <functional>
@@ -175,15 +174,22 @@ public:
 
     auto empty() const noexcept -> bool { return root()->right == root(); }
 
-    [[gnu::flatten]] auto insert(auto&& criterion, Node* root, Node* node,
+    [[gnu::flatten]] auto insert(auto&& should_insert, Node* root, Node* node,
                                  Node* Node::* next,
                                  Node* Node::* prev) noexcept -> void
     {
         node->*next = root;
         node->*prev = root;
 
-        if ((root->*next == nullptr) || (root->*prev == nullptr)
-            || (root->*next == root) || (root->*prev == root)) {
+        if (__builtin_expect(root->*next == nullptr, 0)) {
+            std::unreachable();
+        }
+
+        if (__builtin_expect(root->*prev == nullptr, 0)) {
+            std::unreachable();
+        }
+
+        if ((root->*next == root) || (root->*prev == root)) {
             root->size = 1;
 
             root->*prev = node;
@@ -193,13 +199,13 @@ public:
         }
 
         for (auto cur = root->*next; cur != root; cur = cur->*next) {
-            if (!criterion(cur, node))
+            if (!should_insert(cur, node))
                 continue;
 
-            cur->*prev->*next = node;
-            node->*prev = cur->*prev;
-            cur->*prev = node;
-            node->*next = cur;
+            cur->*next->*prev = node;
+            node->*next = cur->*next;
+            cur->*next = node;
+            node->*prev = cur;
 
             root->size = root->size.value_or(0) + 1;
             break;
@@ -222,18 +228,16 @@ public:
             node->column = header;
 
             insert(
-                [&header, &row](Node* cur, auto) {
+                [&row](Node* cur, auto) {
                     auto current_row = cur->index.value_or(0);
-                    auto next_row = cur->down->index.value_or(0);
 
-                    if (current_row == row)
-                        return false;
+                    if (__builtin_expect(row == current_row, 0)) {
+                        std::unreachable();
+                    }
 
-                    if ((cur->up != header) && (row < current_row))
+                    if (row < current_row) {
                         return false;
-
-                    if ((cur->down != header) && (row < next_row))
-                        return false;
+                    }
 
                     return true;
                 },
@@ -243,20 +247,16 @@ public:
         {
             auto const header = m_row_headers[row];
             insert(
-                [&header, &col](Node* cur, auto) {
+                [&col](Node* cur, auto) {
                     auto current_col = cur->column->index.value_or(0);
-                    auto next_col = (cur->right->column)
-                                        ? cur->right->column->index.value_or(0)
-                                        : 0;
 
-                    if (current_col == col)
-                        return false;
+                    if (__builtin_expect(col == current_col, 0)) {
+                        std::unreachable();
+                    }
 
-                    if ((cur->left != header) && (col < current_col))
+                    if (col < current_col) {
                         return false;
-
-                    if ((cur->right != header) && (col < next_col))
-                        return false;
+                    }
 
                     return true;
                 },
