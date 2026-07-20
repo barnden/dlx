@@ -54,7 +54,8 @@ protected:
         }
     };
 
-    static auto constexpr matrix_row_to_cell(size_t r) noexcept -> Cell
+    [[nodiscard]] static auto constexpr matrix_row_to_cell(size_t r) noexcept
+        -> Cell
     {
         auto row = (r - 1) / 81;
         auto col = ((r - 1) / 9) % 9;
@@ -63,14 +64,17 @@ protected:
         return { row, col, val };
     }
 
-    static auto constexpr cell_to_matrix_row(size_t row, size_t col,
-                                             int val) noexcept -> size_t
+    [[nodiscard]] static auto constexpr cell_to_matrix_row(size_t row,
+                                                           size_t col,
+                                                           int val) noexcept
+        -> size_t
     {
         return row * 81 + 9 * col + val;
     }
 
-    static auto constexpr cell_to_matrix_columns(size_t row, size_t col,
-                                                 int val) noexcept
+    [[nodiscard]] static auto constexpr cell_to_matrix_columns(size_t row,
+                                                               size_t col,
+                                                               int val) noexcept
         -> std::array<size_t, 4>
     {
         // For a (row, col, val) triplet get the satisified constraint columns
@@ -84,7 +88,7 @@ protected:
         // clang-format on
     }
 
-    virtual auto generate_entries() const noexcept
+    [[nodiscard]] auto generate_entries() const noexcept
         -> std::pair<std::unordered_set<size_t>,
                      std::vector<std::pair<size_t, size_t>>>
     {

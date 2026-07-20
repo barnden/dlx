@@ -1,6 +1,8 @@
 #include "sudoku.h"
 
+#include <cstring>
 #include <initializer_list>
+#include <iostream>
 #include <print>
 
 auto main() -> int
@@ -25,14 +27,16 @@ auto main() -> int
         // clang-format on
     };
 
+    // 2. Fill in the clues on the board
     for (auto&& [r, c, val] : entries) {
         board[r, c] = val;
     }
 
+    std::println("Input:");
     std::println("{}", board);
 
     if (auto solution = board.solve()) {
-        using std::views::zip, std::views::iota;
+        using std::views::enumerate;
 
         // clang-format off
         auto expected = {
@@ -52,8 +56,11 @@ auto main() -> int
             board[r, c] = val;
         }
 
-        for (auto&& [i, val] : zip(iota(0uz), expected)) {
-            assert(val == board[i]);
+        for (auto&& [i, val] : enumerate(expected)) {
+            if (val != board[i]) {
+                std::println(std::cerr, "Invalid solution.");
+                return -1;
+            }
         }
 
         std::println("Solution:");
