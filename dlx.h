@@ -305,9 +305,17 @@ public:
                     continue;
                 }
 
+                auto& size = j->column->size;
+                if (__builtin_expect(!size.has_value(), 0)) {
+                    std::unreachable();
+                }
+
+                if (__builtin_expect(*size == 0, 0)) {
+                    std::unreachable();
+                }
+
                 remove(j, &Node::up, &Node::down);
-                j->column->size
-                    = std::max(j->column->size.value_or(0), 1uz) - 1;
+                size = *size - 1;
             }
         }
     }
@@ -330,7 +338,14 @@ public:
                 }
 
                 reinsert(j, &Node::up, &Node::down);
-                j->column->size = j->column->size.value_or(0) + 1;
+
+                auto& size = j->column->size;
+
+                if (__builtin_expect(!size.has_value(), 0)) {
+                    std::unreachable();
+                }
+
+                size = *size + 1;
             }
         }
 
