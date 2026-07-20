@@ -440,11 +440,10 @@ private:
 
     auto search(std::vector<Matrix::Node*>& O,
                 std::optional<Predicate> predicate
-                = std::nullopt) const noexcept
-        -> std::generator<std::vector<Matrix::Node*>&>
+                = std::nullopt) const noexcept -> std::generator<bool>
     {
         if (m_matrix.empty()) {
-            co_yield O;
+            co_yield true;
             co_return;
         }
 
@@ -512,9 +511,10 @@ public:
         -> std::generator<std::unordered_set<size_t>>
     {
         auto O = std::vector<Matrix::Node*> { };
-        for (auto solution : search(O, predicate)) {
-            if (solution.empty())
-                continue;
+        for (auto _ : search(O, predicate)) {
+            if (__builtin_expect(O.empty(), 0)) {
+                std::unreachable();
+            }
 
             co_yield DLX::transform_rows(O);
         }
