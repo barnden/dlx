@@ -141,11 +141,12 @@ private:
     std::vector<Node*> m_row_headers;
 
     auto create_headers(size_t Matrix::* extent,
-                        std::vector<Node*> Matrix::* vector, Node* Node::* prev,
-                        Node* Node::* next) noexcept -> void
+                        std::vector<Node*> Matrix::* vector_member,
+                        Node* Node::* prev, Node* Node::* next) noexcept -> void
     {
         auto root = new Node();
-        this->*vector = std::vector<Node*> { root };
+        auto& vector = this->*vector_member;
+        vector = std::vector<Node*> { root };
 
         for (auto i = 0uz; i < this->*extent; i++) {
             auto header = new Node();
@@ -160,14 +161,14 @@ private:
             header->left = header;
             header->right = header;
 
-            (this->*vector).back()->*next = header;
-            header->*prev = (this->*vector).back();
+            vector.back()->*next = header;
+            header->*prev = vector.back();
             header->*next = root;
 
-            (this->*vector).push_back(std::move(header));
+            vector.push_back(std::move(header));
         }
 
-        root->*prev = (this->*vector).back();
+        root->*prev = vector.back();
     }
 
 public:
@@ -204,20 +205,17 @@ public:
             delete header;
         }
 
-        for (auto* header : m_headers | std::views::drop(1)) {
-            // Delete column header
+        for (auto* header : m_headers) {
+            // Delete column headers and root node.
             delete header;
         }
-
-        // Delete root
-        delete m_headers[0];
     }
 
     auto empty() const noexcept -> bool { return root()->right == root(); }
 
-    [[gnu::flatten]] auto insert(auto&& should_insert, Node* root, Node* node,
-                                 Node* Node::* next,
-                                 Node* Node::* prev) noexcept -> void
+    template <auto next, auto prev>
+    [[gnu::flatten]] auto insert(Node* root, Node* node,
+                                 auto&& should_insert) noexcept -> void
     {
         node->*next = root;
         node->*prev = root;
@@ -255,6 +253,18 @@ public:
 
     auto insert(size_t row, size_t col) noexcept -> void
     {
+        static auto constexpr should_insert = [](size_t index, auto&& f) {
+            return [=, &f](Node* cur, auto) -> bool {
+                auto current_index = f(cur)->index.value_or(0);
+
+                if (__builtin_expect(index == current_index, 0)) {
+                    std::unreachable();
+                }
+
+                return index > current_index;
+            };
+        };
+
         // Important: Use of 1-indexed indices
         assert(row > 0);
         assert(row <= row);
@@ -263,50 +273,19 @@ public:
 
         auto* const node = new Node();
         node->index = row;
+        node->column = m_headers[col];
 
-        {
-            auto const header = m_headers[col];
-            node->column = header;
+        insert<&Node::up, &Node::down>(
+            m_headers[col], node,
+            should_insert(row, [](Node* cur) { return cur; }));
 
-            insert(
-                [&row](Node* cur, auto) {
-                    auto current_row = cur->index.value_or(0);
-
-                    if (__builtin_expect(row == current_row, 0)) {
-                        std::unreachable();
-                    }
-
-                    if (row < current_row) {
-                        return false;
-                    }
-
-                    return true;
-                },
-                header, node, &Node::up, &Node::down);
-        }
-
-        {
-            auto const header = m_row_headers[row];
-            insert(
-                [&col](Node* cur, auto) {
-                    auto current_col = cur->column->index.value_or(0);
-
-                    if (__builtin_expect(col == current_col, 0)) {
-                        std::unreachable();
-                    }
-
-                    if (col < current_col) {
-                        return false;
-                    }
-
-                    return true;
-                },
-                header, node, &Node::left, &Node::right);
-        }
+        insert<&Node::left, &Node::right>(
+            m_row_headers[row], node,
+            should_insert(col, [](Node* cur) { return cur->column; }));
     }
 
-    auto remove(Node* node, Node* Node::* prev,
-                Node* Node::* next) const noexcept -> void
+    template <auto prev, auto next>
+    auto remove(Node* node) const noexcept -> void
     {
         // x.R.L = x.L
         node->*next->*prev = node->*prev;
@@ -315,8 +294,8 @@ public:
         node->*prev->*next = node->*next;
     }
 
-    auto reinsert(Node* node, Node* Node::* prev,
-                  Node* Node::* next) const noexcept -> void
+    template <auto prev, auto next>
+    auto reinsert(Node* node) const noexcept -> void
     {
         // x.R.L = x
         node->*next->*prev = node;
@@ -336,13 +315,12 @@ public:
     auto cover(Node* col) const noexcept -> void
     {
         // Remove c from header-list
-        remove(col, &Node::left, &Node::right);
+        remove<&Node::left, &Node::right>(col);
 
         // For each row in c, remove it from all other columns
         for (auto i = col->down; i != col; i = i->down) {
             for (auto j = i->right; j != i; j = j->right) {
                 if (j->column == nullptr) {
-                    j->size = limits<size_t>::max();
                     continue;
                 }
 
@@ -355,7 +333,7 @@ public:
                     std::unreachable();
                 }
 
-                remove(j, &Node::up, &Node::down);
+                remove<&Node::up, &Node::down>(j);
                 size = *size - 1;
             }
         }
@@ -374,11 +352,10 @@ public:
         for (auto i = col->up; i != col; i = i->up) {
             for (auto j = i->left; j != i; j = j->left) {
                 if (j->column == nullptr) {
-                    j->size = 0;
                     continue;
                 }
 
-                reinsert(j, &Node::up, &Node::down);
+                reinsert<&Node::up, &Node::down>(j);
 
                 auto& size = j->column->size;
 
@@ -390,7 +367,7 @@ public:
             }
         }
 
-        reinsert(col, &Node::left, &Node::right);
+        reinsert<&Node::left, &Node::right>(col);
     }
 
     [[nodiscard]] auto root() const noexcept -> Node const*
