@@ -127,12 +127,26 @@ public:
         std::optional<size_t> index = std::nullopt; // Not in [Knuth00]
     };
 
-private:
-    friend Solver;
-
     template <class C>
         requires Container<C, Node*>
-    friend auto transform_rows(C&&);
+    [[nodiscard]] auto transform_matrix_nodes_to_indices(C&& O) const noexcept
+        -> std::unordered_set<size_t>
+    {
+        auto solution = std::unordered_set<size_t> { };
+
+        for (auto* node : O) {
+            if (auto index = node->index) {
+                solution.insert(*index);
+            } else {
+                std::unreachable();
+            }
+        }
+
+        return solution;
+    }
+
+private:
+    friend Solver;
 
     size_t m_rows;
     size_t m_cols;
@@ -431,23 +445,6 @@ public:
     }
 };
 
-template <class C>
-    requires Container<C, Matrix::Node*>
-[[nodiscard]] auto transform_rows(C&& O) noexcept -> std::unordered_set<size_t>
-{
-    auto solution = std::unordered_set<size_t> { };
-
-    for (auto* node : O) {
-        if (auto index = node->index) {
-            solution.insert(*index);
-        } else {
-            std::unreachable();
-        }
-    }
-
-    return solution;
-}
-
 class Solver {
 public:
     using Predicate = std::function<bool(std::vector<Matrix::Node*>&)>;
@@ -553,7 +550,7 @@ public:
                 std::unreachable();
             }
 
-            co_yield DLX::transform_rows(O);
+            co_yield m_matrix.transform_matrix_nodes_to_indices(O);
         }
     }
 
