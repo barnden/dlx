@@ -24,9 +24,49 @@ class Matrix;
 }
 namespace std {
 template <> struct formatter<DLX::Matrix> : formatter<string> {
+    enum Mode { DEFAULT = 0, ZERO, CSV } m_mode;
+
+    constexpr auto parse(auto& context)
+    {
+        auto it = context.begin();
+        auto end = context.end();
+
+        if (it != end && *it != '}') {
+            switch (*it) {
+            case 'z':
+                m_mode = ZERO;
+                break;
+            case 'c':
+                m_mode = CSV;
+                break;
+            default:
+                m_mode = DEFAULT;
+                break;
+            }
+
+            ++it;
+
+            if (*it != '}') {
+                throw format_error("Invalid Matrix format specifier.");
+            }
+        }
+
+        return it;
+    }
     auto format(auto const& instance, auto& context) const
     {
-        return formatter<string>::format(instance.to_string(), context);
+        switch (m_mode) {
+        case DEFAULT:
+            return formatter<string>::format(instance.to_string(), context);
+        case ZERO:
+            return formatter<string>::format(
+                instance.template to_string<'0', ' '>(), context);
+        case CSV:
+            return formatter<string>::format(
+                instance.template to_string<'0', ','>(), context);
+        default:
+            std::unreachable();
+        }
     }
 };
 }
@@ -358,6 +398,7 @@ public:
         return m_headers[0];
     }
 
+    template <char zero = '.', char delimiter = ' '>
     [[nodiscard]] auto to_string() const noexcept -> std::string
     {
         auto result = std::string { };
@@ -386,7 +427,7 @@ public:
                     // Realistically this branch should never trigger because
                     // the exact cover problem would be unsolvable if it did.
 
-                    result += "0 ";
+                    result += std::format("0{}", delimiter);
                     continue;
                 }
 
@@ -397,8 +438,11 @@ public:
                     }
                 }
 
-                // TODO: Add option to toggle between dot and zero.
-                result += std::format("{} ", filled ? '1' : '.');
+                result += filled ? '1' : zero;
+
+                if (header->right != root()) {
+                    result += delimiter;
+                }
             }
 
             result += '\n';
