@@ -11,9 +11,10 @@
 #include <utility>
 #include <vector>
 
-#include <generator>
+#include <version>
 static_assert(__cpp_lib_generator >= 202207L,
               "missing std::generator from <generator>");
+#include <generator>
 
 namespace DLX {
 
